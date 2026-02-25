@@ -1,0 +1,7 @@
+{
+  "threshold_percentile": 99.5,
+  "anomaly_score_threshold": 0.6526355850212888,
+  "score_definition": "anomaly_score = -IsolationForest.score_samples(X); higher means more anomalous",
+  "contamination_fit_param": 0.01,
+  "fit_on_normal_only": true
+}

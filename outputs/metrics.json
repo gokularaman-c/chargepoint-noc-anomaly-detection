@@ -1,0 +1,20 @@
+{
+  "n_rows": 199566,
+  "n_features": 34,
+  "proxy_fault_count": 1109,
+  "proxy_fault_rate": 0.005557058817634266,
+  "predicted_anomaly_count": 998,
+  "predicted_anomaly_rate": 0.00500085184851127,
+  "threshold_percentile": 99.5,
+  "anomaly_score_threshold": 0.6418290030491712,
+  "proxy_eval_confusion_matrix": {
+    "tn": 197459,
+    "fp": 998,
+    "fn": 1109,
+    "tp": 0
+  },
+  "proxy_eval_precision": 0.0,
+  "proxy_eval_recall": 0.0,
+  "proxy_eval_f1": 0.0,
+  "precision_at_k_where_k_equals_proxy_fault_count": 0.0
+}

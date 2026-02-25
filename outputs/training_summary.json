@@ -1,0 +1,27 @@
+{
+  "feature_columns_sample": [
+    "voltage",
+    "current",
+    "power_kw",
+    "temperature_c",
+    "duration_sec",
+    "energy_kwh",
+    "hour",
+    "day_of_week",
+    "is_weekend",
+    "calc_power_kw"
+  ],
+  "feature_columns_count": 34,
+  "station_baselines_shape": [
+    21,
+    15
+  ],
+  "raw_shape": [
+    199566,
+    11
+  ],
+  "feature_frame_shape": [
+    199566,
+    56
+  ]
+}
