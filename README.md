@@ -174,7 +174,7 @@ See `AI_USAGE.md` for full details.
 
 ---
 
-## 12) Contact / Context
+## 12) Context
 
 This repository is submitted solely for the ChargePoint take-home exercise review process.
 
