@@ -52,8 +52,13 @@ This submission implements:
 - Session-sequence features (event index, elapsed time, within-session deltas)
 - Station-relative baseline deviation features
 
-### Thresholding
-- Anomaly scores are converted to `is_anomaly` using a saved score threshold (selected via training-time percentile configuration)
+### Decision rule (NOC-style hybrid)
+The pipeline produces:
+- `is_explicit_fault = (error_code != 0)`
+- `is_model_anomaly = (anomaly_score >= threshold)` from Isolation Forest
+- `is_anomaly = is_explicit_fault OR is_model_anomaly`
+
+This is operationally realistic for a NOC workflow: explicit fault codes are always flagged, and ML surfaces additional silent anomalies among `error_code == 0` events.
 
 ---
 
@@ -77,16 +82,15 @@ Install the dependencies listed in `requirements.txt`, then run the commands bel
 Run training from the project root:
 
 ```bash
-python -m src.train --input data/charging_logs.csv --contamination 0.01 --threshold-percentile 99.5
+python -m src.train --input data/charging_logs.csv --artifacts-dir artifacts --outputs-dir outputs --contamination 0.01 --threshold-percentile 99.5
 ```
-
 ### What training does
 - Loads and parses the input CSV
 - Builds engineered features
 - Fits the anomaly detection model
-- Computes anomaly scores on training data
+- Computes anomaly scores on the full dataset
 - Selects/saves an anomaly threshold
-- Saves inference artifacts in `artifacts/`
+- Saves inference artifacts in `artifacts/` and metrics/previews in `outputs/`
 
 ---
 
@@ -95,20 +99,23 @@ python -m src.train --input data/charging_logs.csv --contamination 0.01 --thresh
 The required lightweight inference script is:
 
 ```bash
-python predict.py --input data/charging_logs.csv --output outputs/predictions_test.csv
+python predict.py --input data/charging_logs.csv --output outputs/predictions_test.csv --artifacts-dir artifacts --include-flags
 ```
-
 ### Inference behavior
 - Loads the input CSV
 - Loads saved model + preprocessing artifacts from `artifacts/`
 - Rebuilds preprocessing + feature engineering consistently
-- Scores anomaly likelihood
+- Computes `anomaly_score`
+- Computes:
+  - `is_explicit_fault = (error_code != 0)`
+  - `is_model_anomaly = (anomaly_score >= threshold)`
+  - `is_anomaly = is_explicit_fault OR is_model_anomaly`
 - Writes output CSV with all original columns plus:
   - `anomaly_score`
   - `is_anomaly` (0/1)
+  - (optional debug via `--include-flags`) `is_model_anomaly`, `is_explicit_fault`
 
 ### Expected output format
-
 The output CSV preserves the input rows and appends the anomaly columns.
 
 ---
@@ -118,8 +125,8 @@ The output CSV preserves the input rows and appends the anomaly columns.
 Example validation commands used to verify final outputs:
 
 ```bash
-python -m src.train --input data/charging_logs.csv --contamination 0.01 --threshold-percentile 99.5
-python predict.py --input data/charging_logs.csv --output outputs/predictions_test.csv
+python -m src.train --input data/charging_logs.csv --artifacts-dir artifacts --outputs-dir outputs --contamination 0.01 --threshold-percentile 99.5
+python predict.py --input data/charging_logs.csv --output outputs/predictions_test.csv --artifacts-dir artifacts --include-flags
 ```
 
 Optional quick output check:
@@ -128,10 +135,21 @@ Optional quick output check:
 python - <<'PY'
 import pandas as pd
 df = pd.read_csv("outputs/predictions_test.csv")
+
 print("rows:", len(df))
 print("has anomaly_score:", "anomaly_score" in df.columns)
 print("has is_anomaly:", "is_anomaly" in df.columns)
+
+# Optional debug flags if --include-flags was used
+print("has is_model_anomaly:", "is_model_anomaly" in df.columns)
+print("has is_explicit_fault:", "is_explicit_fault" in df.columns)
+
 print(df["is_anomaly"].value_counts(dropna=False).to_dict())
+
+# Sanity check: all proxy faults should be flagged by the hybrid rule
+faults = (df["error_code"].fillna(0).astype(int) != 0)
+print("proxy faults (error_code!=0):", int(faults.sum()))
+print("faults flagged:", int(((faults) & (df["is_anomaly"] == 1)).sum()))
 PY
 ```
 
@@ -140,9 +158,10 @@ PY
 ## 8) Evaluation Notes
 
 This is an unsupervised anomaly detection task. In this submission:
-- `error_code` / `message` are treated as proxy signals for sanity-check analysis only
-- They are not used as supervised labels for model training
-- Threshold selection and result interpretation are discussed in detail in `REPORT.md`
+- `error_code != 0` is treated as an explicit fault indicator (NOC-style) and is always flagged in the final `is_anomaly`
+- The Isolation Forest model flags additional anomalies based on telemetry behavior via `anomaly_score`
+- `message` is not used as a supervised training label; it is used only for interpretation/EDA
+- Detailed results, proxy sanity checks, and tradeoffs are documented in `REPORT.md`
 
 The focus is on engineering judgment, feature design, anomaly triage usefulness, and production practicality for NOC-style monitoring.
 

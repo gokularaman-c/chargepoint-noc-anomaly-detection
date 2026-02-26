@@ -22,3 +22,9 @@ env/
 # Generated zips
 *.zip
 
+# Outputs (generated)
+outputs/*
+!outputs/
+!outputs/metrics.json
+!outputs/top_anomalies.csv
+

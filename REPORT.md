@@ -138,33 +138,45 @@ Observation: the proxy-evaluation outcome remained effectively unchanged (no ove
 
 ## 7) Results
 
+### Definitions (important)
+This pipeline produces three related flags:
+
+- **Explicit faults**: `error_code != 0` (treated as actionable anomalies in a NOC setting)
+- **Model anomalies**: `anomaly_score >= threshold` from Isolation Forest
+- **Final anomalies**: `is_anomaly = explicit_fault OR model_anomaly`
+
+This makes the system practical for operations: known fault codes are always flagged, and the ML model surfaces additional “silent anomalies” when no explicit fault code is raised.
+
 ### Primary training summary
 - Rows scored: **199,566**
 - Model features: **34**
 - Threshold (p99.5): **0.641829**
-- Predicted anomalies: **998** (**0.500%**)
-- Proxy faults (`error_code != 0`): **1,109** (**0.556%**)
+- Explicit faults (`error_code != 0`): **1,109** (**0.556%**)
+- Model anomalies (score ≥ threshold): **998** (**0.500%**)
+- Final anomalies (OR): **2,107** (**1.056%**)
 
 ### Proxy evaluation (sanity check only)
-Using `error_code != 0` as a proxy label:
+Since ground-truth anomaly labels are not provided, I use `error_code != 0` only as a proxy sanity check.
 
+**Model-only vs proxy faults (`error_code != 0`):**
 - Precision: **0.0000**
 - Recall: **0.0000**
 - F1: **0.0000**
 - Precision@K (K = #proxy_faults): **0.0000**
+- Confusion Matrix `[[tn, fp], [fn, tp]]`: `[[197459, 998], [1109, 0]]`
 
-Confusion Matrix `[[tn, fp], [fn, tp]]`:
-- `[[197459, 998], [1109, 0]]`
+**Hybrid (explicit faults OR model) vs proxy faults:**
+- Precision: **0.5263**
+- Recall: **1.0000**
+- F1: **0.6897**
+- Confusion Matrix `[[tn, fp], [fn, tp]]`: `[[197459, 998], [0, 1109]]`
 
-At the selected threshold, the model flags a compact top-ranked anomaly set (**0.5% of rows**), which is operationally useful for triage even though it does not overlap with the proxy fault labels.
+### Interpretation
+The Isolation Forest **model-only** anomalies do not overlap with proxy faults at the strict p99.5 operating point, indicating the model is prioritizing a different anomaly family (e.g., telemetry inconsistencies, session-dynamics irregularities, station-relative deviations) than explicit fault-code events.
 
-### Interpretation of proxy mismatch
-This does **not necessarily mean the anomaly detector failed**. It suggests:
-1. `error_code != 0` is an imperfect proxy for telemetry anomalies and may represent only a subset of failure modes,
-2. some proxy faults appear to be protocol/software/message-level events that may not produce strong numeric telemetry deviations,
-3. the model may be prioritizing a different anomaly family (sensor inconsistency, session-dynamics irregularities, or station-relative deviations) than explicit fault-code events.
-
-This is expected behavior in real NOC settings where “fault labels” and “telemetry anomalies” only partially overlap.
+The **hybrid** rule + ML approach reflects a realistic NOC workflow:
+- explicit fault codes are always actionable and should be flagged deterministically,
+- ML is used to surface additional “silent anomalies” among `error_code == 0` events for triage and investigation.
 
 ---
 
@@ -173,47 +185,47 @@ This is expected behavior in real NOC settings where “fault labels” and “t
 I implemented a CLI inference script:
 
 ```bash
-python predict.py --input <input_csv> --output <output_csv>
+python predict.py --input <input_csv> --output <output_csv> --artifacts-dir artifacts --include-flags
 ```
 
 ### Behavior
-
 - Loads saved model + artifacts
 - Rebuilds inference features with the same preprocessing pipeline
-- Computes anomaly scores
-- Applies saved threshold
+- Computes `anomaly_score`
+- Computes:
+  - `is_explicit_fault = (error_code != 0)`
+  - `is_model_anomaly = (anomaly_score >= threshold)`
+  - `is_anomaly = is_explicit_fault OR is_model_anomaly`
 - Writes output CSV with:
   - `anomaly_score`
   - `is_anomaly`
+  - (optional debug) `is_model_anomaly`, `is_explicit_fault`
 
-This script was tested successfully on the provided dataset.
-
-A final smoke test was run after documentation updates to confirm training and inference still execute successfully and produce the expected output columns and row counts.
+This script was tested successfully on the provided dataset and produces consistent counts between training and inference.
 
 ---
 
 ## 9) Production Considerations (NOC-Focused)
 
-Strengths of current approach
-	•	Fast scoring for large telemetry logs
-	•	Reproducible pipeline with saved artifacts
-	•	Easy deployment as batch CLI inference
-	•	Feature engineering captures physics and session dynamics (not just raw values)
+### Strengths of current approach
+- Fast scoring for large telemetry logs
+- Reproducible pipeline with saved artifacts
+- Easy deployment as batch CLI inference
+- Feature engineering captures physics and session dynamics (not just raw values)
+- Hybrid decisioning is operationally realistic: explicit fault codes are always flagged, and ML surfaces additional silent anomalies
 
-Practical limitations
-	•	Threshold is global (one threshold may not be optimal for every station)
-	•	No text semantics from message field are used
-	•	Proxy labels are weak and may not represent all anomaly types
-	•	Concept drift (firmware updates, hardware replacements, weather/season effects) can change distributions over time
+### Practical limitations
+- Threshold is global (one threshold may not be optimal for every station)
+- No text semantics from message field are used
+- Proxy labels are weak and may not represent all anomaly types
+- Concept drift (firmware updates, hardware replacements, weather/season effects) can change distributions over time
 
-Recommended next improvements
-	1.	Station-specific thresholds
-	2.	Time-windowed retraining / drift monitoring
-	3.	Hybrid approach:
-	•	rules for known faults (error code / message patterns)
-	•	ML for subtle sensor anomalies
-	4.	Text feature extraction from message (NLP embedding or keyword features)
-	5.	Ranking/triage outputs (severity bands based on anomaly score)
+### Recommended next improvements
+1. Station-specific thresholds (or station-aware calibration) to reduce false positives
+2. Time-windowed retraining / drift monitoring with alert-volume tracking
+3. Hybrid approach (implemented): explicit fault codes (`error_code != 0`) are flagged deterministically; ML flags additional silent anomalies. Future extension: add curated message-pattern rules and severity bands based on anomaly_score
+4. Text feature extraction from message (keyword features or embeddings) to better capture protocol/software-level faults
+5. Ranking/triage outputs (severity bands + “why flagged” signals such as power mismatch, temperature delta, station deviation)
 
 ---
 

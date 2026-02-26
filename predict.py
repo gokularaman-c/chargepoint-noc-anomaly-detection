@@ -15,16 +15,21 @@ def parse_args():
     parser.add_argument("--input", type=str, required=True, help="Path to input CSV")
     parser.add_argument("--output", type=str, required=True, help="Path to output CSV")
     parser.add_argument("--artifacts-dir", type=str, default="artifacts", help="Directory with saved model artifacts")
+    parser.add_argument(
+        "--include-score",
+        action="store_true",
+        help="Include anomaly_score column in output CSV (default: included anyway)",
+    )
+    parser.add_argument(
+        "--include-flags",
+        action="store_true",
+        help="Include is_model_anomaly and is_explicit_fault columns in output CSV",
+    )
     return parser.parse_args()
 
 
 def _call_build_feature_frame_inference(df_raw, station_baselines):
-    """
-    Handles minor signature differences depending on how your src/features.py was written.
-    """
-    # Try common signatures in order
     tried = []
-
     try:
         return build_feature_frame(
             df_raw,
@@ -55,7 +60,6 @@ def _call_build_feature_frame_inference(df_raw, station_baselines):
     except TypeError as e:
         tried.append(str(e))
 
-    # Last fallback if your function returns (df_feat, station_baselines) and ignores passed baselines
     try:
         return build_feature_frame(
             df_raw,
@@ -72,10 +76,6 @@ def _call_build_feature_frame_inference(df_raw, station_baselines):
 
 
 def _prepare_model_matrix_inference(df_feat, feature_columns, fill_values):
-    """
-    Handles minor return/signature differences.
-    """
-    # Common pattern: returns X only
     try:
         out = prepare_model_matrix(
             df_feat,
@@ -89,7 +89,6 @@ def _prepare_model_matrix_inference(df_feat, feature_columns, fill_values):
     except TypeError:
         pass
 
-    # Fallback if function expects no fit_fill_values flag in inference
     out = prepare_model_matrix(
         df_feat,
         feature_columns,
@@ -107,7 +106,6 @@ def main():
     output_path = Path(args.output)
     artifacts_dir = Path(args.artifacts_dir)
 
-    # Validate artifact files
     required_files = [
         artifacts_dir / "model.pkl",
         artifacts_dir / "feature_columns.json",
@@ -136,10 +134,7 @@ def main():
 
     print("[3/6] Building inference features...")
     feat_out = _call_build_feature_frame_inference(df_raw, station_baselines)
-    if isinstance(feat_out, tuple):
-        df_feat = feat_out[0]
-    else:
-        df_feat = feat_out
+    df_feat = feat_out[0] if isinstance(feat_out, tuple) else feat_out
 
     print("[4/6] Preparing model matrix...")
     X = _prepare_model_matrix_inference(df_feat, feature_columns, fill_values)
@@ -147,12 +142,29 @@ def main():
     print("[5/6] Scoring anomalies...")
     normal_score = model.score_samples(X)
     anomaly_score = -normal_score
-    is_anomaly = (anomaly_score >= anomaly_threshold).astype(int)
+
+    # Model-based anomaly flag
+    is_model_anomaly = (anomaly_score >= anomaly_threshold)
+
+    # Explicit faults (rule layer) - SAFE: only error_code!=0
+    # (Avoid message-based logic to prevent over-flagging on unseen datasets.)
+    error_code_series = df_raw.get("error_code", pd.Series([0] * len(df_raw)))
+    is_explicit_fault = error_code_series.fillna(0).astype(int).ne(0)
+
+    # Final anomaly flag = explicit faults OR model anomaly
+    is_anomaly = (is_explicit_fault | is_model_anomaly).astype(int)
 
     print("[6/6] Writing output CSV...")
     df_out = df_raw.copy()
+
+    # Always include anomaly_score + is_anomaly (required output)
     df_out["anomaly_score"] = anomaly_score
     df_out["is_anomaly"] = is_anomaly
+
+    # Optional debug flags
+    if args.include_flags:
+        df_out["is_model_anomaly"] = is_model_anomaly.astype(int)
+        df_out["is_explicit_fault"] = is_explicit_fault.astype(int)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df_out.to_csv(output_path, index=False)
@@ -161,7 +173,9 @@ def main():
     print(f"Input rows: {len(df_raw)}")
     print(f"Output rows: {len(df_out)}")
     print(f"Anomaly threshold: {anomaly_threshold:.6f}")
-    print(f"Predicted anomalies: {int(df_out['is_anomaly'].sum())} ({df_out['is_anomaly'].mean()*100:.3f}%)")
+    print(f"Explicit faults (error_code!=0): {int(is_explicit_fault.sum())} ({is_explicit_fault.mean()*100:.3f}%)")
+    print(f"Model anomalies (score>=threshold): {int(is_model_anomaly.sum())} ({is_model_anomaly.mean()*100:.3f}%)")
+    print(f"Final anomalies (OR): {int(df_out['is_anomaly'].sum())} ({df_out['is_anomaly'].mean()*100:.3f}%)")
     print(f"Saved to: {output_path}")
 
 

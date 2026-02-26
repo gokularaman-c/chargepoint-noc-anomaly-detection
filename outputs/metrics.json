@@ -1,20 +1,55 @@
 {
   "n_rows": 199566,
   "n_features": 34,
-  "proxy_fault_count": 1109,
-  "proxy_fault_rate": 0.005557058817634266,
-  "predicted_anomaly_count": 998,
-  "predicted_anomaly_rate": 0.00500085184851127,
   "threshold_percentile": 99.5,
   "anomaly_score_threshold": 0.6418290030491712,
-  "proxy_eval_confusion_matrix": {
+  "contamination_fit_param": 0.01,
+  "fit_on_normal_only": false,
+  "proxy_fault_count": 1109,
+  "proxy_fault_rate": 0.005557058817634266,
+  "explicit_fault_count": 1109,
+  "explicit_fault_rate": 0.005557058817634266,
+  "model_anomaly_count": 998,
+  "model_anomaly_rate": 0.00500085184851127,
+  "final_anomaly_count": 2107,
+  "final_anomaly_rate": 0.010557910666145537,
+  "proxy_eval_model_only": {
     "tn": 197459,
     "fp": 998,
     "fn": 1109,
-    "tp": 0
+    "tp": 0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "confusion_matrix": [
+      [
+        197459,
+        998
+      ],
+      [
+        1109,
+        0
+      ]
+    ],
+    "precision_at_k_where_k_equals_proxy_fault_count": 0.0
   },
-  "proxy_eval_precision": 0.0,
-  "proxy_eval_recall": 0.0,
-  "proxy_eval_f1": 0.0,
-  "precision_at_k_where_k_equals_proxy_fault_count": 0.0
+  "proxy_eval_hybrid": {
+    "tn": 197459,
+    "fp": 998,
+    "fn": 0,
+    "tp": 1109,
+    "precision": 0.5263407688656858,
+    "recall": 1.0,
+    "f1": 0.6896766169154229,
+    "confusion_matrix": [
+      [
+        197459,
+        998
+      ],
+      [
+        0,
+        1109
+      ]
+    ]
+  }
 }

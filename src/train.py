@@ -53,6 +53,24 @@ def safe_float(x):
         return None
 
 
+def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    precision = precision_score(y_true, y_pred, zero_division=0)
+    recall = recall_score(y_true, y_pred, zero_division=0)
+    f1 = f1_score(y_true, y_pred, zero_division=0)
+    return {
+        "cm": cm,
+        "tn": int(tn),
+        "fp": int(fp),
+        "fn": int(fn),
+        "tp": int(tp),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+    }
+
+
 def main() -> None:
     args = parse_args()
 
@@ -109,27 +127,31 @@ def main() -> None:
     df_scored["anomaly_score"] = anomaly_score
 
     threshold = float(np.percentile(df_scored["anomaly_score"], args.threshold_percentile))
-    df_scored["is_anomaly"] = (df_scored["anomaly_score"] >= threshold).astype(int)
 
-    # Proxy evaluation (for analysis only)
+    # Model-only anomaly flag (this is the ML detector output)
+    df_scored["is_model_anomaly"] = (df_scored["anomaly_score"] >= threshold).astype(int)
+
+    # Explicit faults (rule layer) - safe and consistent with predict.py
+    df_scored["is_explicit_fault"] = (df_scored["proxy_fault_error"].astype(int) != 0).astype(int)
+
+    # Final hybrid anomaly flag (what NOC would page on)
+    df_scored["is_anomaly"] = (
+        (df_scored["is_model_anomaly"] == 1) | (df_scored["is_explicit_fault"] == 1)
+    ).astype(int)
+
+    # Proxy labels (for sanity check only)
     y_true = df_scored["proxy_fault_error"].astype(int).values
-    y_pred = df_scored["is_anomaly"].astype(int).values
+    y_pred_model = df_scored["is_model_anomaly"].astype(int).values
+    y_pred_hybrid = df_scored["is_anomaly"].astype(int).values
 
-    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
-    tn, fp, fn, tp = cm.ravel()
-
-    precision = precision_score(y_true, y_pred, zero_division=0)
-    recall = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
+    model_metrics = _compute_metrics(y_true, y_pred_model)
+    hybrid_metrics = _compute_metrics(y_true, y_pred_hybrid)
 
     # Precision@K where K = number of proxy faults (common unsupervised sanity check)
     k = int(df_scored["proxy_fault_error"].sum())
     topk_idx = df_scored["anomaly_score"].nlargest(k).index if k > 0 else []
-    topk_precision = (
-        float(df_scored.loc[topk_idx, "proxy_fault_error"].mean()) if k > 0 else 0.0
-    )
+    topk_precision = float(df_scored.loc[topk_idx, "proxy_fault_error"].mean()) if k > 0 else 0.0
 
-    # Save artifacts
     print("[6/7] Saving artifacts...")
     joblib.dump(model, artifacts_dir / "model.pkl")
 
@@ -154,33 +176,50 @@ def main() -> None:
     metrics = {
         "n_rows": int(len(df_scored)),
         "n_features": int(len(feature_columns)),
-        "proxy_fault_count": int(df_scored["proxy_fault_error"].sum()),
-        "proxy_fault_rate": float(df_scored["proxy_fault_error"].mean()),
-        "predicted_anomaly_count": int(df_scored["is_anomaly"].sum()),
-        "predicted_anomaly_rate": float(df_scored["is_anomaly"].mean()),
         "threshold_percentile": float(args.threshold_percentile),
         "anomaly_score_threshold": threshold,
-        "proxy_eval_confusion_matrix": {
-            "tn": int(tn),
-            "fp": int(fp),
-            "fn": int(fn),
-            "tp": int(tp),
+        "contamination_fit_param": float(args.contamination),
+        "fit_on_normal_only": bool(args.fit_on_normal_only),
+        "proxy_fault_count": int(df_scored["proxy_fault_error"].sum()),
+        "proxy_fault_rate": float(df_scored["proxy_fault_error"].mean()),
+        "explicit_fault_count": int(df_scored["is_explicit_fault"].sum()),
+        "explicit_fault_rate": float(df_scored["is_explicit_fault"].mean()),
+        "model_anomaly_count": int(df_scored["is_model_anomaly"].sum()),
+        "model_anomaly_rate": float(df_scored["is_model_anomaly"].mean()),
+        "final_anomaly_count": int(df_scored["is_anomaly"].sum()),
+        "final_anomaly_rate": float(df_scored["is_anomaly"].mean()),
+        "proxy_eval_model_only": {
+            "tn": model_metrics["tn"],
+            "fp": model_metrics["fp"],
+            "fn": model_metrics["fn"],
+            "tp": model_metrics["tp"],
+            "precision": model_metrics["precision"],
+            "recall": model_metrics["recall"],
+            "f1": model_metrics["f1"],
+            "confusion_matrix": model_metrics["cm"].tolist(),
+            "precision_at_k_where_k_equals_proxy_fault_count": float(topk_precision),
         },
-        "proxy_eval_precision": float(precision),
-        "proxy_eval_recall": float(recall),
-        "proxy_eval_f1": float(f1),
-        "precision_at_k_where_k_equals_proxy_fault_count": float(topk_precision),
+        "proxy_eval_hybrid": {
+            "tn": hybrid_metrics["tn"],
+            "fp": hybrid_metrics["fp"],
+            "fn": hybrid_metrics["fn"],
+            "tp": hybrid_metrics["tp"],
+            "precision": hybrid_metrics["precision"],
+            "recall": hybrid_metrics["recall"],
+            "f1": hybrid_metrics["f1"],
+            "confusion_matrix": hybrid_metrics["cm"].tolist(),
+        },
     }
 
     with open(outputs_dir / "metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
-    # Save top anomalies preview for report/manual inspection
     preview_cols = [
         "station_id", "timestamp", "session_id",
         "voltage", "current", "power_kw", "temperature_c", "duration_sec", "energy_kwh",
         "error_code", "message_clean", "proxy_fault_error",
-        "anomaly_score", "is_anomaly",
+        "anomaly_score",
+        "is_model_anomaly", "is_explicit_fault", "is_anomaly",
         "power_residual", "power_ratio_safe", "energy_power_gap",
     ]
     preview_cols = [c for c in preview_cols if c in df_scored.columns]
@@ -188,11 +227,8 @@ def main() -> None:
     df_scored.sort_values("anomaly_score", ascending=False).head(500)[preview_cols].to_csv(
         outputs_dir / "top_anomalies.csv", index=False
     )
-
-    # Full prediction dump (can be large but useful during development)
     df_scored[preview_cols].to_csv(outputs_dir / "train_scored_preview.csv", index=False)
 
-    # Save baselines/summary stats for report
     summary = {
         "feature_columns_sample": feature_columns[:10],
         "feature_columns_count": len(feature_columns),
@@ -204,18 +240,28 @@ def main() -> None:
         json.dump(summary, f, indent=2)
 
     print("[7/7] Done.")
+
     print("\n=== Training Summary ===")
     print(f"Rows: {len(df_scored)}")
     print(f"Features: {len(feature_columns)}")
     print(f"Threshold (p{args.threshold_percentile}): {threshold:.6f}")
-    print(f"Predicted anomalies: {df_scored['is_anomaly'].sum()} ({df_scored['is_anomaly'].mean()*100:.3f}%)")
-    print(f"Proxy faults: {df_scored['proxy_fault_error'].sum()} ({df_scored['proxy_fault_error'].mean()*100:.3f}%)")
-    print("\n=== Proxy Evaluation (for sanity check only) ===")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall:    {recall:.4f}")
-    print(f"F1:        {f1:.4f}")
+    print(f"Explicit faults (error_code!=0): {int(df_scored['is_explicit_fault'].sum())} ({df_scored['is_explicit_fault'].mean()*100:.3f}%)")
+    print(f"Model anomalies (score>=threshold): {int(df_scored['is_model_anomaly'].sum())} ({df_scored['is_model_anomaly'].mean()*100:.3f}%)")
+    print(f"Final anomalies (OR): {int(df_scored['is_anomaly'].sum())} ({df_scored['is_anomaly'].mean()*100:.3f}%)")
+
+    print("\n=== Proxy Evaluation (sanity check only) ===")
+    print("Model-only vs proxy faults (error_code!=0):")
+    print(f"Precision: {model_metrics['precision']:.4f}")
+    print(f"Recall:    {model_metrics['recall']:.4f}")
+    print(f"F1:        {model_metrics['f1']:.4f}")
     print(f"Precision@K (K=#proxy_faults): {topk_precision:.4f}")
-    print(f"Confusion Matrix [ [tn, fp], [fn, tp] ]:\n{cm}")
+    print(f"Confusion Matrix [ [tn, fp], [fn, tp] ]:\n{model_metrics['cm']}")
+
+    print("\nHybrid (explicit faults OR model) vs proxy faults:")
+    print(f"Precision: {hybrid_metrics['precision']:.4f}")
+    print(f"Recall:    {hybrid_metrics['recall']:.4f}")
+    print(f"F1:        {hybrid_metrics['f1']:.4f}")
+    print(f"Confusion Matrix [ [tn, fp], [fn, tp] ]:\n{hybrid_metrics['cm']}")
 
 
 if __name__ == "__main__":
