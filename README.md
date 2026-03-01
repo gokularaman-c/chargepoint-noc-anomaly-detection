@@ -35,8 +35,8 @@ This submission implements:
 
 ### Additional files (supporting)
 - `outputs/` — training outputs / summaries / sample predictions (generated during development)
-- `notebooks/` — optional EDA / prototyping notebook(s), if included
-- `data/charging_logs.csv` or `charging_logs.csv` — provided synthetic dataset (if included in repo)
+- `notebooks/` — optional EDA / prototyping notebook(s)
+- `data/charging_logs.csv` or `charging_logs.csv` — provided synthetic dataset 
 
 ---
 
