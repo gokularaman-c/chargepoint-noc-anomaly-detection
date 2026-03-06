@@ -169,7 +169,7 @@ The focus is on engineering judgment, feature design, anomaly triage usefulness,
 
 ## 9) Optional Notebook (EDA / Prototyping)
 
-If a notebook is included in `notebooks/`, it contains exploratory analysis and prototyping work used to inform feature engineering and model decisions.
+Notebook is included in `notebooks/`, it contains exploratory analysis and prototyping work used to inform feature engineering and model decisions.
 
 The production/reproducible pipeline used for final inference is the Python code in `src/` + `predict.py`.
 
