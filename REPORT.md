@@ -220,7 +220,7 @@ This script was tested successfully on the provided dataset and produces consist
 - Proxy labels are weak and may not represent all anomaly types
 - Concept drift (firmware updates, hardware replacements, weather/season effects) can change distributions over time
 
-### Recommended next improvements
+### Future Improvements
 1. Station-specific thresholds (or station-aware calibration) to reduce false positives
 2. Time-windowed retraining / drift monitoring with alert-volume tracking
 3. Hybrid approach (implemented): explicit fault codes (`error_code != 0`) are flagged deterministically; ML flags additional silent anomalies. Future extension: add curated message-pattern rules and severity bands based on anomaly_score
@@ -241,6 +241,7 @@ This script was tested successfully on the provided dataset and produces consist
 ## 11) Conclusion
 
 This submission provides a practical, reproducible anomaly detection baseline for EV charging log monitoring with:
+
 	•	a robust feature engineering pipeline,
 	•	an unsupervised Isolation Forest model,
 	•	a production-friendly predict.py inference script.
