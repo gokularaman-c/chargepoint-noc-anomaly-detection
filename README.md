@@ -1,4 +1,3 @@
-```markdown
 # EV Charging Log Anomaly Detection
 ## End-to-End Unsupervised Anomaly Detection Pipeline for EV Charging Event Logs
 
@@ -213,4 +212,3 @@ This repository includes:
 ## 12) Scope
 
 This repository focuses on anomaly detection for EV charging event logs, with emphasis on reproducibility, structured engineering, and practical inference design.
-```
