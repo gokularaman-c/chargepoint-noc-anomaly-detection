@@ -1,23 +1,24 @@
-# ChargePoint - AI/ML Intern (NOC Services Automation)
-## Take-Home Technical Exercise — EV Charging Log Anomaly Detection
+```markdown
+# EV Charging Log Anomaly Detection
+## End-to-End Unsupervised Anomaly Detection Pipeline for EV Charging Event Logs
 
-This repository contains my submission for the **ChargePoint AI/ML Intern (NOC Services Automation) Take-Home Technical Exercise**.
+This repository contains an end-to-end machine learning pipeline for detecting anomalous EV charging station events from a synthetic event-level charging log dataset using an **unsupervised anomaly detection approach**.
 
-The goal is to detect anomalous EV charging station events from a synthetic event-level charging log dataset using an **unsupervised anomaly detection pipeline**.
+The repository covers data loading, exploratory data analysis (EDA), feature engineering, anomaly model training, artifact management, and CLI-based inference.
 
 ---
 
-## 1) Problem Summary
+## 1) Project Summary
 
-Each row in `charging_logs.csv` represents an **event** within a charging session (not a full session summary).  
-The task is to identify anomalous events using an unsupervised or semi-supervised ML approach.
+Each row in `charging_logs.csv` represents an **event** within a charging session, not a full session summary.  
+The goal is to identify anomalous events using an unsupervised or semi-supervised machine learning approach.
 
-This submission implements:
+This repository implements:
 
 - data loading and preprocessing
 - exploratory data analysis (EDA)
 - feature engineering (telemetry + temporal + session + station-relative features)
-- anomaly detection model training (**Isolation Forest**)
+- anomaly detection model training using **Isolation Forest**
 - threshold-based anomaly labeling
 - a lightweight inference script (`predict.py`) that outputs `is_anomaly` (0/1)
 
@@ -25,18 +26,18 @@ This submission implements:
 
 ## 2) Repository Contents
 
-### Required deliverables
-- `README.md` — setup and usage instructions (this file)
-- `REPORT.md` — technical report (problem understanding, EDA, modeling, evaluation, results, tradeoffs)
+### Core files
+- `README.md` — setup and usage instructions
+- `REPORT.md` — technical report covering problem understanding, EDA, modeling, evaluation, results, and tradeoffs
 - `AI_USAGE.md` — documentation of AI tool usage and validation
 - `predict.py` — lightweight inference script (CLI)
-- `src/` — source code for data loading, feature engineering, training
+- `src/` — source code for data loading, feature engineering, and training
 - `artifacts/` — saved model and preprocessing artifacts for inference
 
-### Additional files (supporting)
-- `outputs/` — training outputs / summaries / sample predictions (generated during development)
+### Supporting files
+- `outputs/` — training outputs, summaries, and sample predictions
 - `notebooks/` — optional EDA / prototyping notebook(s)
-- `data/charging_logs.csv` or `charging_logs.csv` — provided synthetic dataset 
+- `data/charging_logs.csv` or `charging_logs.csv` — synthetic event-level charging log dataset
 
 ---
 
@@ -48,17 +49,17 @@ This submission implements:
 ### Feature engineering (high level)
 - Core telemetry features (`voltage`, `current`, `power_kw`, `temperature_c`, `duration_sec`, `energy_kwh`)
 - Time features (`hour`, `day_of_week`, `is_weekend`)
-- Physics consistency checks (e.g., `voltage * current` vs `power_kw`)
+- Physics-consistency checks (for example, `voltage * current` versus `power_kw`)
 - Session-sequence features (event index, elapsed time, within-session deltas)
 - Station-relative baseline deviation features
 
-### Decision rule (NOC-style hybrid)
+### Final anomaly logic
 The pipeline produces:
 - `is_explicit_fault = (error_code != 0)`
-- `is_model_anomaly = (anomaly_score >= threshold)` from Isolation Forest
+- `is_model_anomaly = (anomaly_score >= threshold)`
 - `is_anomaly = is_explicit_fault OR is_model_anomaly`
 
-This is operationally realistic for a NOC workflow: explicit fault codes are always flagged, and ML surfaces additional silent anomalies among `error_code == 0` events.
+This hybrid logic is useful in anomaly detection settings because explicit fault codes are always flagged, while the model surfaces additional silent anomalies among events where no explicit fault code is raised.
 
 ---
 
@@ -84,45 +85,53 @@ Run training from the project root:
 ```bash
 python -m src.train --input data/charging_logs.csv --artifacts-dir artifacts --outputs-dir outputs --contamination 0.01 --threshold-percentile 99.5
 ```
+
 ### What training does
-- Loads and parses the input CSV
-- Builds engineered features
-- Fits the anomaly detection model
-- Computes anomaly scores on the full dataset
-- Selects/saves an anomaly threshold
-- Saves inference artifacts in `artifacts/` and metrics/previews in `outputs/`
+
+* Loads and parses the input CSV
+* Builds engineered features
+* Fits the anomaly detection model
+* Computes anomaly scores on the full dataset
+* Selects and saves an anomaly threshold
+* Saves inference artifacts in `artifacts/`
+* Saves metrics and inspection files in `outputs/`
 
 ---
 
-## 6) Running Inference (predict.py)
+## 6) Running Inference (`predict.py`)
 
-The required lightweight inference script is:
+Run inference with:
 
 ```bash
 python predict.py --input data/charging_logs.csv --output outputs/predictions_test.csv --artifacts-dir artifacts --include-flags
 ```
+
 ### Inference behavior
-- Loads the input CSV
-- Loads saved model + preprocessing artifacts from `artifacts/`
-- Rebuilds preprocessing + feature engineering consistently
-- Computes `anomaly_score`
-- Computes:
-  - `is_explicit_fault = (error_code != 0)`
-  - `is_model_anomaly = (anomaly_score >= threshold)`
-  - `is_anomaly = is_explicit_fault OR is_model_anomaly`
-- Writes output CSV with all original columns plus:
-  - `anomaly_score`
-  - `is_anomaly` (0/1)
-  - (optional debug via `--include-flags`) `is_model_anomaly`, `is_explicit_fault`
+
+* Loads the input CSV
+* Loads saved model and preprocessing artifacts from `artifacts/`
+* Rebuilds preprocessing and feature engineering consistently
+* Computes `anomaly_score`
+* Computes:
+
+  * `is_explicit_fault = (error_code != 0)`
+  * `is_model_anomaly = (anomaly_score >= threshold)`
+  * `is_anomaly = is_explicit_fault OR is_model_anomaly`
+* Writes output CSV with all original columns plus:
+
+  * `anomaly_score`
+  * `is_anomaly` (0/1)
+  * optional debug columns: `is_model_anomaly`, `is_explicit_fault`
 
 ### Expected output format
-The output CSV preserves the input rows and appends the anomaly columns.
+
+The output CSV preserves the input rows and appends the anomaly-related columns.
 
 ---
 
-## 7) Reproducibility / Smoke Test (used before submission)
+## 7) Reproducibility / Smoke Test
 
-Example validation commands used to verify final outputs:
+Example commands used to validate final outputs:
 
 ```bash
 python -m src.train --input data/charging_logs.csv --artifacts-dir artifacts --outputs-dir outputs --contamination 0.01 --threshold-percentile 99.5
@@ -146,7 +155,6 @@ print("has is_explicit_fault:", "is_explicit_fault" in df.columns)
 
 print(df["is_anomaly"].value_counts(dropna=False).to_dict())
 
-# Sanity check: all proxy faults should be flagged by the hybrid rule
 faults = (df["error_code"].fillna(0).astype(int) != 0)
 print("proxy faults (error_code!=0):", int(faults.sum()))
 print("faults flagged:", int(((faults) & (df["is_anomaly"] == 1)).sum()))
@@ -157,44 +165,52 @@ PY
 
 ## 8) Evaluation Notes
 
-This is an unsupervised anomaly detection task. In this submission:
-- `error_code != 0` is treated as an explicit fault indicator (NOC-style) and is always flagged in the final `is_anomaly`
-- The Isolation Forest model flags additional anomalies based on telemetry behavior via `anomaly_score`
-- `message` is not used as a supervised training label; it is used only for interpretation/EDA
-- Detailed results, proxy sanity checks, and tradeoffs are documented in `REPORT.md`
+This is an unsupervised anomaly detection pipeline. In this implementation:
 
-The focus is on engineering judgment, feature design, anomaly triage usefulness, and production practicality for NOC-style monitoring.
+* `error_code != 0` is treated as an explicit fault indicator and is always flagged in the final `is_anomaly`
+* the Isolation Forest model flags additional anomalies based on telemetry behavior via `anomaly_score`
+* `message` is not used as a supervised training label; it is used only for interpretation and EDA
+* detailed results, proxy sanity checks, and tradeoffs are documented in `REPORT.md`
+
+The focus is on:
+
+* engineering judgment
+* feature design
+* anomaly triage usefulness
+* reproducibility
+* practical ML pipeline design
 
 ---
 
-## 9) Optional Notebook (EDA / Prototyping)
+## 9) Optional Notebook
 
-Notebook is included in `notebooks/`, it contains exploratory analysis and prototyping work used to inform feature engineering and model decisions.
+An optional notebook is included in `notebooks/` and contains exploratory analysis and prototyping work that informed feature engineering and modeling decisions.
 
-The production/reproducible pipeline used for final inference is the Python code in `src/` + `predict.py`.
+The reproducible pipeline used for final inference is the Python code in `src/` together with `predict.py`.
 
 ---
 
 ## 10) Notes on AI Tool Usage
 
-AI tools were used as part of the development workflow (brainstorming, code-review assistance, report/doc polish, edge-case checks), while implementation, debugging, validation, and final decisions were manually executed and verified.
+AI tools were used as part of the development workflow for brainstorming, code-review assistance, documentation refinement, and edge-case checks, while implementation, debugging, validation, and final decisions were manually executed and verified.
 
 See `AI_USAGE.md` for full details.
 
 ---
 
-## 11) Submission Checklist Mapping (ChargePoint Requirements)
+## 11) Project Structure Summary
 
-- Source code (preprocessing, EDA support, feature engineering, model training/evaluation, inference pipeline)
-- `REPORT.md` (technical report)
-- `AI_USAGE.md` (AI tool usage + validation)
-- Lightweight inference script (`predict.py`)
-- Optional notebook (if included)
+This repository includes:
 
----
-
-## 12) Context
-
-This repository is submitted solely for the ChargePoint take-home exercise review process.
+* source code for preprocessing, EDA support, feature engineering, model training/evaluation, and inference
+* `REPORT.md` for technical documentation
+* `AI_USAGE.md` for AI usage and validation notes
+* a lightweight inference script (`predict.py`)
+* optional notebook(s) for exploratory work
 
 ---
+
+## 12) Scope
+
+This repository focuses on anomaly detection for EV charging event logs, with emphasis on reproducibility, structured engineering, and practical inference design.
+```
